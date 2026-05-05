@@ -21,6 +21,16 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -48,6 +58,7 @@ export function SystemAudioRecorder({
 	const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
 	const [isUploading, setIsUploading] = useState(false);
 	const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+	const [showCloseConfirm, setShowCloseConfirm] = useState(false); // New state for confirmation
 	const recordingChunksRef = useRef<Blob[]>([]);
 	const timerIntervalRef = useRef<number | null>(null);
 
@@ -76,18 +87,15 @@ export function SystemAudioRecorder({
 
 	const { toast } = useToast();
 
-	// Browser compatibility check - only Chromium browsers supported
+	// Browser compatibility check
 	const checkCompatibility = (): { supported: boolean; error?: string } => {
-		// Check if browser supports getDisplayMedia at all
 		if (!navigator.mediaDevices?.getDisplayMedia) {
 			return {
 				supported: false,
-				error:
-					"Your browser doesn't support screen capture. Please use Chrome, Edge, or Brave.",
+				error: "Your browser doesn't support screen capture. Please use Chrome, Edge, or Brave.",
 			};
 		}
 
-		// Check if it's a Chromium-based browser
 		const userAgent = navigator.userAgent.toLowerCase();
 		const isChromium = userAgent.includes('chrome') ||
 		                   userAgent.includes('chromium') ||
@@ -97,16 +105,13 @@ export function SystemAudioRecorder({
 		if (!isChromium) {
 			return {
 				supported: false,
-				error:
-					"System audio recording is only supported on Chromium-based browsers (Chrome, Edge, Brave). " +
-					"Please switch to one of these browsers to use this feature.",
+				error: "System audio recording is only supported on Chromium-based browsers (Chrome, Edge, Brave).",
 			};
 		}
 
 		return { supported: true };
 	};
 
-	// Initialize microphone device list when dialog opens
 	useEffect(() => {
 		if (!isOpen) return;
 
@@ -114,24 +119,20 @@ export function SystemAudioRecorder({
 
 		const init = async () => {
 			try {
-				// Check browser compatibility
 				const compatibility = checkCompatibility();
 				if (!compatibility.supported) {
 					setCompatibilityError(compatibility.error || null);
 					return;
 				}
 
-				// Request permission to get device labels
 				activeStream = await navigator.mediaDevices.getUserMedia({
 					audio: true,
 				});
 
-				// Get available microphones
 				const devices = await navigator.mediaDevices.enumerateDevices();
 				const audioDevices = devices.filter((d) => d.kind === "audioinput");
 				setAvailableDevices(audioDevices);
 
-				// Set default device if none selected
 				if (audioDevices.length > 0) {
 					const deviceExists = audioDevices.some(
 						(d) => d.deviceId === selectedDevice,
@@ -147,7 +148,6 @@ export function SystemAudioRecorder({
 					description: "Failed to get microphone devices. You can still record system audio only.",
 				});
 			} finally {
-				// Stop the temporary stream used for permissions
 				if (activeStream) {
 					activeStream.getTracks().forEach((track) => track.stop());
 				}
@@ -155,9 +155,8 @@ export function SystemAudioRecorder({
 		};
 
 		init();
-	}, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [isOpen]); 
 
-	// Simple timer that increments every second while recording
 	useEffect(() => {
 		if (isRecording) {
 			timerIntervalRef.current = window.setInterval(() => {
@@ -177,25 +176,21 @@ export function SystemAudioRecorder({
 		};
 	}, [isRecording]);
 
-	// Handle background recording - prevent page unload warnings during recording
 	useEffect(() => {
 		const originalTitle = document.title;
 
 		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
 			if (isRecording) {
 				e.preventDefault();
-				e.returnValue =
-					"Recording in progress. Are you sure you want to leave?";
+				e.returnValue = "Recording in progress. Are you sure you want to leave?";
 				return e.returnValue;
 			}
 		};
 
 		if (isRecording) {
-			// Update page title to show recording status
 			document.title = `🔴 Recording System Audio... - ${originalTitle}`;
 			window.addEventListener("beforeunload", handleBeforeUnload);
 		} else {
-			// Restore original title
 			document.title = originalTitle;
 		}
 
@@ -205,36 +200,28 @@ export function SystemAudioRecorder({
 		};
 	}, [isRecording]);
 
-	// Create mixed audio stream using Web Audio API
 	const createMixedAudioStream = (
 		sysStream: MediaStream,
 		mStream: MediaStream,
 	): MediaStream => {
 		try {
-			// Create audio context
 			const ctx = new AudioContext();
 			setAudioContext(ctx);
 
-			// Create source nodes from MediaStreams
 			const systemSource = ctx.createMediaStreamSource(sysStream);
 			const micSource = ctx.createMediaStreamSource(mStream);
 
-			// Create gain nodes for volume control
 			const systemGain = ctx.createGain();
 			const micGain = ctx.createGain();
 
-			// Set initial volumes
 			systemGain.gain.value = systemVolume / 100;
 			micGain.gain.value = micVolume / 100;
 
-			// Store gain nodes for real-time control
 			setSystemGainNode(systemGain);
 			setMicGainNode(micGain);
 
-			// Create destination for mixed output
 			const destination = ctx.createMediaStreamDestination();
 
-			// Connect: sources → gains → destination
 			systemSource.connect(systemGain);
 			micSource.connect(micGain);
 			systemGain.connect(destination);
@@ -247,18 +234,14 @@ export function SystemAudioRecorder({
 				title: "Audio Mixing Unavailable",
 				description: "Recording system audio only. Browser doesn't support mixing.",
 			});
-			// Fallback: return system stream only
 			return sysStream;
 		}
 	};
 
-	// Start recording
 	const startRecording = async () => {
 		try {
 			setPermissionDenied(false);
 
-			// Step 1: Request system audio via getDisplayMedia
-			// Note: video is required by the API, we'll stop it immediately
 			const displayStream = await navigator.mediaDevices.getDisplayMedia({
 				video: true,
 				audio: {
@@ -268,21 +251,12 @@ export function SystemAudioRecorder({
 				},
 			});
 
-			// Debug: Log what tracks we got
-			console.info("Display stream tracks:", {
-				video: displayStream.getVideoTracks().length,
-				audio: displayStream.getAudioTracks().length,
-				allTracks: displayStream.getTracks().map(t => ({ kind: t.kind, label: t.label }))
-			});
-
-			// Stop the video track immediately since we only want audio
 			const videoTrack = displayStream.getVideoTracks()[0];
 			if (videoTrack) {
 				videoTrack.stop();
 				displayStream.removeTrack(videoTrack);
 			}
 
-			// Create a new MediaStream with only audio tracks
 			const audioTracks = displayStream.getAudioTracks();
 			if (audioTracks.length === 0) {
 				alert(
@@ -299,7 +273,6 @@ export function SystemAudioRecorder({
 
 			setSystemStream(sysStream);
 
-			// Handle stream end (user stops sharing via browser UI)
 			sysStream.getAudioTracks()[0].addEventListener("ended", () => {
 				if (isRecording) {
 					stopRecording();
@@ -310,16 +283,15 @@ export function SystemAudioRecorder({
 				}
 			});
 
-			// Step 2: Request microphone
 			let mStream: MediaStream | null = null;
 			try {
 				mStream = await navigator.mediaDevices.getUserMedia({
 					audio: {
 						deviceId: selectedDevice ? { exact: selectedDevice } : undefined,
-						// @ts-expect-error - Chrome/Edge support "remote-only" for echo cancellation
-						echoCancellation: "remote-only",  // Only cancel remote echo, allow mic during local playback
-						noiseSuppression: true,   // Remove background noise
-						autoGainControl: autoGainControl,    // Normalize volume levels (user configurable)
+						// @ts-expect-error - Chrome/Edge support "remote-only"
+						echoCancellation: "remote-only",  
+						noiseSuppression: true,   
+						autoGainControl: autoGainControl,    
 					},
 				});
 
@@ -334,7 +306,6 @@ export function SystemAudioRecorder({
 				setMicAvailable(false);
 			}
 
-			// Step 3: Mix streams or use system-only
 			let streamToRecord: MediaStream;
 			if (mStream) {
 				streamToRecord = createMixedAudioStream(sysStream, mStream);
@@ -342,7 +313,6 @@ export function SystemAudioRecorder({
 				streamToRecord = sysStream;
 			}
 
-			// Step 4: Create MediaRecorder directly
 			const recorder = new MediaRecorder(streamToRecord);
 			recordingChunksRef.current = [];
 
@@ -360,7 +330,7 @@ export function SystemAudioRecorder({
 				setIsRecording(false);
 			};
 
-			recorder.start(1000); // Capture in 1-second chunks
+			recorder.start(1000); 
 			setMediaRecorder(recorder);
 
 			setIsRecording(true);
@@ -369,7 +339,6 @@ export function SystemAudioRecorder({
 		} catch (error) {
 			console.error("Failed to start recording:", error);
 
-			// Handle specific errors
 			if (error instanceof Error && error.name === "NotAllowedError") {
 				setPermissionDenied(true);
 			} else if (error instanceof Error && error.name === "NotFoundError") {
@@ -380,12 +349,10 @@ export function SystemAudioRecorder({
 				alert("Failed to start screen sharing. Please try again.");
 			}
 
-			// Cleanup if failed
 			cleanupStreams();
 		}
 	};
 
-	// Stop recording
 	const stopRecording = () => {
 		if (mediaRecorder && mediaRecorder.state !== 'inactive') {
 			mediaRecorder.stop();
@@ -393,7 +360,6 @@ export function SystemAudioRecorder({
 		cleanupStreams();
 	};
 
-	// Update system volume in real-time
 	const updateSystemVolume = (value: number[]) => {
 		const vol = value[0];
 		setSystemVolume(vol);
@@ -402,7 +368,6 @@ export function SystemAudioRecorder({
 		}
 	};
 
-	// Update microphone volume in real-time
 	const updateMicVolume = (value: number[]) => {
 		const vol = value[0];
 		setMicVolume(vol);
@@ -411,7 +376,6 @@ export function SystemAudioRecorder({
 		}
 	};
 
-	// Cleanup streams and audio context
 	const cleanupStreams = () => {
 		if (systemStream) {
 			systemStream.getTracks().forEach((track) => track.stop());
@@ -430,14 +394,12 @@ export function SystemAudioRecorder({
 		setMediaRecorder(null);
 	};
 
-	// Format time in mm:ss
 	const formatTime = (timeMs: number) => {
 		const minutes = Math.floor(timeMs / 60000);
 		const seconds = Math.floor((timeMs % 60000) / 1000);
 		return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 	};
 
-	// Handle upload
 	const handleUpload = async () => {
 		if (!recordedBlob) return;
 
@@ -447,7 +409,6 @@ export function SystemAudioRecorder({
 				recordedBlob,
 				title || `System Recording ${new Date().toISOString()}`,
 			);
-			// Reset state
 			setRecordedBlob(null);
 			setTitle("");
 			setRecordingTime(0);
@@ -460,7 +421,6 @@ export function SystemAudioRecorder({
 		}
 	};
 
-	// Handle dialog close
 	const handleClose = () => {
 		if (isRecording) {
 			stopRecording();
@@ -475,7 +435,17 @@ export function SystemAudioRecorder({
 		onClose();
 	};
 
-	// Don't render anything if there's a compatibility error - show it in a separate dialog
+	// Intercept open changes
+	const handleOpenChange = (open: boolean) => {
+		if (!open) {
+			if (isRecording) {
+				setShowCloseConfirm(true);
+			} else {
+				handleClose();
+			}
+		}
+	};
+
 	if (compatibilityError) {
 		return (
 			<Dialog open={true} onOpenChange={(open) => {
@@ -491,7 +461,6 @@ export function SystemAudioRecorder({
 							Record System Audio
 						</DialogTitle>
 					</DialogHeader>
-
 					<div className="flex items-center gap-3 p-4 bg-[var(--error)]/10 border border-[var(--error)]/20 rounded-[var(--radius-card)]">
 						<XCircle className="h-6 w-6 text-[var(--error)] flex-shrink-0" />
 						<div>
@@ -506,7 +475,6 @@ export function SystemAudioRecorder({
 							</p>
 						</div>
 					</div>
-
 					<div className="flex justify-end">
 						<Button variant="outline" onClick={() => {
 							setCompatibilityError(null);
@@ -520,15 +488,13 @@ export function SystemAudioRecorder({
 		);
 	}
 
-	// If dialog not open, don't render anything
 	if (!isOpen) {
 		return null;
 	}
 
-	// Render permission denied error
 	if (permissionDenied && !isRecording) {
 		return (
-			<Dialog open={isOpen} onOpenChange={handleClose}>
+			<Dialog open={isOpen} onOpenChange={handleOpenChange}>
 				<DialogContent className="sm:max-w-[600px]">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
@@ -572,10 +538,9 @@ export function SystemAudioRecorder({
 		);
 	}
 
-	// Render recording complete state
 	if (recordedBlob && !isRecording) {
 		return (
-			<Dialog open={isOpen} onOpenChange={handleClose}>
+			<Dialog open={isOpen} onOpenChange={handleOpenChange}>
 				<DialogContent className="sm:max-w-[600px]">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
@@ -585,7 +550,6 @@ export function SystemAudioRecorder({
 					</DialogHeader>
 
 					<div className="space-y-6 py-4">
-						{/* Success Message */}
 						<div className="flex items-center gap-3 p-4 bg-[var(--success-translucent)] border border-[var(--success-solid)]/20 rounded-[var(--radius-card)]">
 							<CheckCircle className="h-5 w-5 text-[var(--success-solid)] flex-shrink-0" />
 							<div>
@@ -598,7 +562,6 @@ export function SystemAudioRecorder({
 							</div>
 						</div>
 
-						{/* Title Input */}
 						<div className="space-y-2">
 							<label className="text-sm font-medium text-[var(--text-primary)]">
 								Recording Title
@@ -610,7 +573,6 @@ export function SystemAudioRecorder({
 							/>
 						</div>
 
-						{/* Upload Button */}
 						<Button
 							onClick={handleUpload}
 							disabled={isUploading}
@@ -634,107 +596,131 @@ export function SystemAudioRecorder({
 		);
 	}
 
-	// Render active recording state
 	if (isRecording) {
 		return (
-			<Dialog open={isOpen} onOpenChange={handleClose}>
-				<DialogContent className="sm:max-w-[700px]">
-					<DialogHeader>
-						<DialogTitle className="flex items-center gap-2">
-							<MonitorSpeaker className="h-5 w-5 text-[var(--brand-solid)]" />
-							Recording System Audio
-						</DialogTitle>
-					</DialogHeader>
+			<>
+				<Dialog open={isOpen} onOpenChange={handleOpenChange}>
+					<DialogContent className="sm:max-w-[700px]">
+						<DialogHeader>
+							<DialogTitle className="flex items-center gap-2">
+								<MonitorSpeaker className="h-5 w-5 text-[var(--brand-solid)]" />
+								Recording System Audio
+							</DialogTitle>
+						</DialogHeader>
 
-					<div className="space-y-6 py-4">
-						{/* Recording Status Banner */}
-						<div className="flex items-center gap-3 p-4 bg-[var(--brand-light)] border border-[var(--brand-solid)]/20 rounded-[var(--radius-card)]">
-							<div className="h-3 w-3 bg-[var(--error)] rounded-full animate-pulse flex-shrink-0" />
-							<div>
-								<h3 className="font-semibold text-[var(--text-primary)]">
-									Recording System Audio{micAvailable ? " + Microphone" : " Only"}
-								</h3>
-								<p className="text-xs text-[var(--text-secondary)]">
-									Recording continues even if you switch tabs
-								</p>
-							</div>
-						</div>
-
-						{/* Recording Time */}
-						<div className="text-center">
-							<div className="text-6xl font-mono font-bold text-[var(--text-primary)] mb-2">
-								{formatTime(recordingTime)}
-							</div>
-							<div className="flex items-center justify-center gap-2 text-sm text-[var(--text-secondary)]">
-								<div className="h-2 w-2 bg-[var(--error)] rounded-full animate-pulse" />
-								<span>Recording...</span>
-							</div>
-						</div>
-
-						{/* Volume Controls */}
-						{micAvailable && (
-							<div className="grid grid-cols-2 gap-4">
-								<div className="space-y-2">
-									<div className="flex items-center gap-2">
-										<MonitorSpeaker className="h-4 w-4 text-[var(--brand-solid)]" />
-										<label className="text-sm font-medium text-[var(--text-primary)]">
-											System Audio
-										</label>
-									</div>
-									<Slider
-										min={0}
-										max={100}
-										step={1}
-										value={[systemVolume]}
-										onValueChange={updateSystemVolume}
-										className="cursor-pointer"
-									/>
-									<span className="text-xs text-[var(--text-tertiary)]">
-										{systemVolume}%
-									</span>
-								</div>
-								<div className="space-y-2">
-									<div className="flex items-center gap-2">
-										<Mic className="h-4 w-4 text-[var(--brand-solid)]" />
-										<label className="text-sm font-medium text-[var(--text-primary)]">
-											Microphone
-										</label>
-									</div>
-									<Slider
-										min={0}
-										max={100}
-										step={1}
-										value={[micVolume]}
-										onValueChange={updateMicVolume}
-										className="cursor-pointer"
-									/>
-									<span className="text-xs text-[var(--text-tertiary)]">
-										{micVolume}%
-									</span>
+						<div className="space-y-6 py-4">
+							<div className="flex items-center gap-3 p-4 bg-[var(--brand-light)] border border-[var(--brand-solid)]/20 rounded-[var(--radius-card)]">
+								<div className="h-3 w-3 bg-[var(--error)] rounded-full animate-pulse flex-shrink-0" />
+								<div>
+									<h3 className="font-semibold text-[var(--text-primary)]">
+										Recording System Audio{micAvailable ? " + Microphone" : " Only"}
+									</h3>
+									<p className="text-xs text-[var(--text-secondary)]">
+										Recording continues even if you switch tabs
+									</p>
 								</div>
 							</div>
-						)}
 
-						{/* Recording Controls */}
-						<div className="flex justify-center">
-							<Button
-								onClick={stopRecording}
-								size="lg"
-								variant="secondary"
+							<div className="text-center">
+								<div className="text-6xl font-mono font-bold text-[var(--text-primary)] mb-2">
+									{formatTime(recordingTime)}
+								</div>
+								<div className="flex items-center justify-center gap-2 text-sm text-[var(--text-secondary)]">
+									<div className="h-2 w-2 bg-[var(--error)] rounded-full animate-pulse" />
+									<span>Recording...</span>
+								</div>
+							</div>
+
+							{micAvailable && (
+								<div className="grid grid-cols-2 gap-4">
+									<div className="space-y-2">
+										<div className="flex items-center gap-2">
+											<MonitorSpeaker className="h-4 w-4 text-[var(--brand-solid)]" />
+											<label className="text-sm font-medium text-[var(--text-primary)]">
+												System Audio
+											</label>
+										</div>
+										<Slider
+											min={0}
+											max={100}
+											step={1}
+											value={[systemVolume]}
+											onValueChange={updateSystemVolume}
+											className="cursor-pointer"
+										/>
+										<span className="text-xs text-[var(--text-tertiary)]">
+											{systemVolume}%
+										</span>
+									</div>
+									<div className="space-y-2">
+										<div className="flex items-center gap-2">
+											<Mic className="h-4 w-4 text-[var(--brand-solid)]" />
+											<label className="text-sm font-medium text-[var(--text-primary)]">
+												Microphone
+											</label>
+										</div>
+										<Slider
+											min={0}
+											max={100}
+											step={1}
+											value={[micVolume]}
+											onValueChange={updateMicVolume}
+											className="cursor-pointer"
+										/>
+										<span className="text-xs text-[var(--text-tertiary)]">
+											{micVolume}%
+										</span>
+									</div>
+								</div>
+							)}
+
+							<div className="flex justify-center">
+								<Button
+									onClick={stopRecording}
+									size="lg"
+									variant="secondary"
+								>
+									<Square className="h-5 w-5 mr-2" />
+									Stop Recording
+								</Button>
+							</div>
+						</div>
+					</DialogContent>
+				</Dialog>
+
+				<AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
+					<AlertDialogContent className="bg-white dark:bg-carbon-900 border-carbon-200 dark:border-carbon-700">
+						<AlertDialogHeader>
+							<AlertDialogTitle className="text-carbon-900 dark:text-carbon-100">Stop Recording?</AlertDialogTitle>
+							<AlertDialogDescription className="text-carbon-600 dark:text-carbon-400">
+								You are currently recording system audio. Are you sure you want to close this window? Your recording will be stopped and discarded.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel 
+								onClick={() => setShowCloseConfirm(false)}
+								className="bg-white dark:bg-carbon-800 text-carbon-900 dark:text-carbon-100 border-carbon-300 dark:border-carbon-600 hover:bg-carbon-100 dark:hover:bg-carbon-700"
 							>
-								<Square className="h-5 w-5 mr-2" />
-								Stop Recording
-							</Button>
-						</div>
-					</div>
-				</DialogContent>
-			</Dialog>
+								Continue Recording
+							</AlertDialogCancel>
+							<AlertDialogAction 
+								onClick={() => {
+									setShowCloseConfirm(false);
+									handleClose();
+								}} 
+								className="bg-red-500 hover:bg-red-600 text-white"
+							>
+								Stop & Close
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
+			</>
 		);
 	}
 
-	// Render initial instructions state
 	return (
-		<Dialog open={isOpen} onOpenChange={handleClose}>
+		<Dialog open={isOpen} onOpenChange={handleOpenChange}>
 			<DialogContent className="sm:max-w-[700px]">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
@@ -748,38 +734,29 @@ export function SystemAudioRecorder({
 				</DialogHeader>
 
 				<div className="space-y-6 py-4">
-					{/* Instructions Card */}
 					<div className="p-4 bg-[var(--brand-light)] border border-[var(--brand-solid)]/20 rounded-[var(--radius-card)]">
 						<h3 className="font-semibold mb-3 text-[var(--text-primary)]">
 							How it works:
 						</h3>
 						<ol className="space-y-3 text-sm text-[var(--text-secondary)]">
 							<li className="flex gap-3">
-								<span className="font-bold text-[var(--brand-solid)] flex-shrink-0">
-									1.
-								</span>
+								<span className="font-bold text-[var(--brand-solid)] flex-shrink-0">1.</span>
 								<span>Click "Start Recording" below</span>
 							</li>
 							<li className="flex gap-3">
-								<span className="font-bold text-[var(--brand-solid)] flex-shrink-0">
-									2.
-								</span>
+								<span className="font-bold text-[var(--brand-solid)] flex-shrink-0">2.</span>
 								<span>
 									Select a <strong>Chrome Tab</strong> from the browser picker (not window or screen)
 								</span>
 							</li>
 							<li className="flex gap-3">
-								<span className="font-bold text-[var(--brand-solid)] flex-shrink-0">
-									3.
-								</span>
+								<span className="font-bold text-[var(--brand-solid)] flex-shrink-0">3.</span>
 								<span>
 									<strong>Check "Share tab audio"</strong> checkbox at the bottom
 								</span>
 							</li>
 							<li className="flex gap-3">
-								<span className="font-bold text-[var(--brand-solid)] flex-shrink-0">
-									4.
-								</span>
+								<span className="font-bold text-[var(--brand-solid)] flex-shrink-0">4.</span>
 								<span>Allow microphone access when prompted (optional)</span>
 							</li>
 						</ol>
@@ -790,7 +767,6 @@ export function SystemAudioRecorder({
 						</div>
 					</div>
 
-					{/* Title Input */}
 					<div className="space-y-2">
 						<label className="text-sm font-medium text-[var(--text-primary)]">
 							Recording Title (Optional)
@@ -803,7 +779,6 @@ export function SystemAudioRecorder({
 						/>
 					</div>
 
-					{/* Microphone Selection */}
 					{availableDevices.length > 1 && (
 						<div className="space-y-2">
 							<label className="text-sm font-medium text-[var(--text-primary)]">
@@ -853,7 +828,6 @@ export function SystemAudioRecorder({
 						</div>
 					)}
 
-					{/* Audio Settings */}
 					<div className="space-y-3">
 						<label className="text-sm font-medium text-[var(--text-primary)]">
 							Audio Settings
@@ -875,7 +849,6 @@ export function SystemAudioRecorder({
 						</div>
 					</div>
 
-					{/* Start Button */}
 					<Button
 						onClick={startRecording}
 						size="lg"
